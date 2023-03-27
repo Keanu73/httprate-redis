@@ -26,8 +26,6 @@ type redisCounter struct {
 	windowLength time.Duration
 }
 
-var _ httprate.LimitCounter = &redisCounter{}
-
 // WithRedisLimitCounter is middleware that can be fed to httprate.
 // Example:
 /*
@@ -43,9 +41,12 @@ var _ httprate.LimitCounter = &redisCounter{}
 		),
 	)
 */
-func WithRedisLimitCounter(cfg *Config) httprate.Option {
-	rc, _ := NewRedisLimitCounter(cfg)
-	return httprate.WithLimitCounter(rc)
+func WithRedisLimitCounter(cfg *Config) (httprate.Option, error) {
+	rc, err := NewRedisLimitCounter(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return httprate.WithLimitCounter(rc), nil
 }
 
 // NewRedisLimitCounter returns a new redis-based LimitCounter.
