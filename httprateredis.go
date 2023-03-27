@@ -22,7 +22,7 @@ type Config struct {
 }
 
 type redisCounter struct {
-	client       *rueidis.Client
+	Client       rueidis.Client
 	windowLength time.Duration
 }
 
@@ -37,8 +37,8 @@ var _ httprate.LimitCounter = &redisCounter{}
 		httprate.WithKeyByRealIP(),
 		httprateredis.WithRedisLimitCounter(
 			&httprateredis.Config{
-				Host: redisHostPort[0],
-				Port: uint16(redisPort),
+				Addresses: redisAddresses,
+				Password:  redisPassword,
 			},
 		),
 	)
@@ -76,11 +76,11 @@ func NewRedisLimitCounter(cfg *Config) (httprate.LimitCounter, error) {
 
 	client, err := rueidis.NewClient(opts)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to redis: %w", err)
+		return nil, fmt.Errorf("unable to c.Client.ct to redis: %w", err)
 	}
 
 	return &redisCounter{
-		client: &client,
+		Client: client,
 	}, nil
 }
 
@@ -90,15 +90,12 @@ func (c *redisCounter) Config(requestLimit int, windowLength time.Duration) {
 }
 
 func (c *redisCounter) Increment(key string, currentWindow time.Time) error {
-	conn := *c.client
-	defer conn.Close()
-
 	hkey := limitCounterKey(key, currentWindow)
 
-	incrQuery := conn.B().Incr().Key(hkey).Build()
-	expireQuery := conn.B().Expire().Key(hkey).Seconds(int64(c.windowLength.Seconds() * 3)).Build()
+	incrQuery := c.Client.B().Incr().Key(hkey).Build()
+	expireQuery := c.Client.B().Expire().Key(hkey).Seconds(int64(c.windowLength.Seconds() * 3)).Build()
 
-	result := conn.DoMulti(context.Background(), incrQuery, expireQuery)
+	result := c.Client.DoMulti(context.Background(), incrQuery, expireQuery)
 	for _, response := range result {
 		if response.Error() != nil {
 			return fmt.Errorf("redis increment failed: %w", response.Error())
@@ -109,13 +106,10 @@ func (c *redisCounter) Increment(key string, currentWindow time.Time) error {
 }
 
 func (c *redisCounter) Get(key string, currentWindow, previousWindow time.Time) (int, int, error) {
-	conn := *c.client
-	defer conn.Close()
+	getCurrValue := c.Client.B().Get().Key(limitCounterKey(key, currentWindow)).Build()
+	getPrevValue := c.Client.B().Get().Key(limitCounterKey(key, previousWindow)).Build()
 
-	getCurrValue := conn.B().Get().Key(limitCounterKey(key, currentWindow)).Build()
-	getPrevValue := conn.B().Get().Key(limitCounterKey(key, previousWindow)).Build()
-
-	result := conn.DoMulti(context.Background(), getCurrValue, getPrevValue)
+	result := c.Client.DoMulti(context.Background(), getCurrValue, getPrevValue)
 	for _, response := range result {
 		if response.Error() != nil {
 			if response.Error() == rueidis.Nil {
